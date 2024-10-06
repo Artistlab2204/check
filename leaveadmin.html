@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>คำขอลา</title>
+
+  <!-- Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- SweetAlert2 CSS & JS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+</head>
+<body class="bg-gray-100">
+
+  <div class="max-w-7xl mx-auto mt-10 bg-white p-8 rounded-lg shadow-lg">
+    <h2 class="text-2xl font-bold mb-6">คำขอลา</h2>
+
+    <!-- Filter Section -->
+    <div class="mb-4">
+      <label class="mr-2">
+        <input type="checkbox" id="pendingCheckbox" checked> รอการอนุมัติ
+      </label>
+      <label class="mr-2">
+        <input type="checkbox" id="approvedCheckbox" > อนุมัติ
+      </label>
+      <label>
+        <input type="checkbox" id="rejectedCheckbox" > ไม่อนุมัติ
+      </label>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full table-auto">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-2 py-2">ชื่อ</th>
+            <th class="px-2 py-2">ประเภท</th>
+            <th class="px-2 py-2">จำนวนวัน</th>
+            <th class="px-2 py-2">สถานะ</th>
+            <th class="px-2 py-2">การจัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="requestTable" class="bg-white">
+          <!-- Table rows will be populated dynamically here -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="flex justify-between items-center mt-4">
+      <button id="prevPage" class="bg-gray-500 text-white px-4 py-2 rounded-lg" disabled>ย้อนกลับ</button>
+      <span id="currentPage" class="text-lg"></span>
+      <button id="nextPage" class="bg-gray-500 text-white px-4 py-2 rounded-lg">ถัดไป</button>
+    </div>
+  </div>
+
+  <script>
+    const sheetDataUrl = 'https://script.google.com/macros/s/AKfycby5JxwtKN99yEbmZ5ojy5KE7OX0W6uVL3FnCWaZzgls5VEor2dWvhIrSsqYVnRlLj__/exec?action=getData';
+    const updateStatusUrl = 'https://script.google.com/macros/s/AKfycby5JxwtKN99yEbmZ5ojy5KE7OX0W6uVL3FnCWaZzgls5VEor2dWvhIrSsqYVnRlLj__/exec?action=updateStatus';
+
+    let requestData = []; // Store the fetched data here
+    let filteredData = []; // Store filtered data
+    let currentPage = 1;  // Current page number
+    const recordsPerPage = 10;  // Number of records per page
+
+    // Fetch data from Google Sheets and populate the table
+    function fetchData() {
+      Swal.fire({
+        title: 'กำลังโหลดข้อมูล...',
+        text: 'โปรดรอสักครู่',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      fetch(sheetDataUrl)
+        .then(response => response.json())
+        .then(data => {
+          Swal.close();  // Close the loading dialog once data is fetched
+          requestData = data.slice(1).reverse(); // Reverse the data to show most recent first
+          filterAndRenderTable();
+        })
+        .catch(error => {
+          Swal.fire('ข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลได้', 'error');
+          console.error('ข้อผิดพลาดในการดึงข้อมูล:', error);
+        });
+    }
+
+    // Fetch data when the page loads
+    fetchData();
+
+    // Calculate the total number of pages based on filtered data
+    function getTotalPages() {
+      return Math.ceil(filteredData.length / recordsPerPage);
+    }
+
+    // Filter the data based on the selected statuses
+    function filterData() {
+      const pendingChecked = document.getElementById('pendingCheckbox').checked;
+      const approvedChecked = document.getElementById('approvedCheckbox').checked;
+      const rejectedChecked = document.getElementById('rejectedCheckbox').checked;
+
+      filteredData = requestData.filter(row => {
+        const status = row[10]; // Assuming status is at index 10
+        return (status === 'รอการอนุมัติ' && pendingChecked) ||
+               (status === 'อนุมัติ' && approvedChecked) ||
+               (status === 'ไม่อนุมัติ' && rejectedChecked);
+      });
+    }
+
+    // Render the table based on the current page
+    function renderTable() {
+      const startIndex = (currentPage - 1) * recordsPerPage;
+      const endIndex = startIndex + recordsPerPage;
+      const pageData = filteredData.slice(startIndex, endIndex);
+
+      const tableBody = document.getElementById('requestTable');
+      tableBody.innerHTML = ''; // Clear existing rows
+
+      pageData.forEach((row, index) => {
+        const status = row[10]; // Assuming status is at index 10
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="border px-2 py-2">${row[1]}</td> <!-- ชื่อ -->
+          <td class="border px-2 py-2">${row[4]}</td> 
+          <td class="border px-2 py-2">${row[11]}</td>
+          <td class="border px-2 py-2 status-${index}">${row[10]}</td> <!-- สถานะ -->
+          <td class="border px-2 py-2">
+              <button class="bg-green-100 text-white px-4 py-1 mb-2 rounded-lg hover:bg-green-50" onclick="confirmUpdateStatus(${row[13]}, 'อนุมัติ', ${index})">✅</button>
+              <button class="bg-red-100 text-white px-4 py-1 mb-2 rounded-lg hover:bg-red-50" onclick="confirmUpdateStatus(${row[13]}, 'ไม่อนุมัติ', ${index})">❌</button>
+              <button class="bg-blue-100 text-white px-4 py-1 mb-2 rounded-lg hover:bg-blue-50" onclick="showDetails(${index})">🔍</button>            </td>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+
+      // Update the page number display
+      document.getElementById('currentPage').innerText = `หน้า ${currentPage} / ${getTotalPages()}`;
+    }
+
+    // Update the table and pagination when filtering or pagination changes
+    function filterAndRenderTable() {
+      filterData();  // Apply filtering
+      currentPage = 1;  // Reset to page 1 after filtering
+      renderTable();  // Render the filtered and paginated data
+      togglePaginationButtons();  // Enable or disable pagination buttons
+    }
+
+    // Enable/disable pagination buttons based on the current page
+    function togglePaginationButtons() {
+      const totalPages = getTotalPages();
+
+      document.getElementById('prevPage').disabled = currentPage === 1;
+      document.getElementById('nextPage').disabled = currentPage === totalPages;
+    }
+
+    // Add event listeners for pagination
+    document.getElementById('prevPage').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderTable();
+      }
+      togglePaginationButtons();
+    });
+
+    document.getElementById('nextPage').addEventListener('click', () => {
+      if (currentPage < getTotalPages()) {
+        currentPage++;
+        renderTable();
+      }
+      togglePaginationButtons();
+    });
+
+    // Add event listeners to checkboxes for filtering
+    document.getElementById('pendingCheckbox').addEventListener('change', filterAndRenderTable);
+    document.getElementById('approvedCheckbox').addEventListener('change', filterAndRenderTable);
+    document.getElementById('rejectedCheckbox').addEventListener('change', filterAndRenderTable);
+
+    function updateStatus(id, newStatus, rowIndex) {
+        Swal.fire({
+            title: 'กำลังบันทึกข้อมูล...',
+            text: 'โปรดรอสักครู่',
+            allowOutsideClick: false,
+            didOpen: () => {
+            Swal.showLoading();
+            }
+        });
+
+        fetch(updateStatusUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, status: newStatus }),
+            mode: 'no-cors'
+        })
+        .then(() => {
+            Swal.fire('สำเร็จ', 'สถานะอัปเดตเรียบร้อย', 'success')
+            .then(() => {
+            fetchData(); // Fetch the updated data after status is changed
+            });
+        })
+        .catch(error => {
+            Swal.fire('ข้อผิดพลาด', 'ไม่สามารถอัปเดตสถานะได้', 'error');
+            console.error('ข้อผิดพลาดในการอัปเดตสถานะ:', error);
+        });
+        }
+
+
+    // Function to show full details with right-left alignment like a receipt
+    function showDetails(index) {
+      const row = filteredData[index];  // Use filtered data
+      Swal.fire({
+        title: `รายละเอียดสำหรับ ${row[1]}`,
+        html: `
+          <div class="flex justify-between"><strong>ชื่อ:</strong> <span>${row[1]}</span></div>
+          <div class="flex justify-between"><strong>รหัสพนักงาน:</strong> <span>${row[2]}</span></div>
+          <div class="flex justify-between"><strong>ตำแหน่ง:</strong> <span>${row[3]}</span></div>
+          <div class="flex justify-between"><strong>ประเภท:</strong> <span>${row[4]}</span></div>
+          <div class="flex justify-between"><strong>วันเริ่มต้น:</strong> <span>${formatDate(row[5])}</span></div>
+          <div class="flex justify-between"><strong>วันสิ้นสุด:</strong> <span>${formatDate(row[6])}</span></div>
+          <div class="flex justify-between"><strong>หัวข้อ:</strong> <span>${row[7]}</span></div>
+          <div class="flex justify-between"><strong>รายละเอียด:</strong> <span>${row[8]}</span></div>
+          <div class="flex justify-between"><strong>ไฟล์แนบ:</strong> <span>${row[9]}</span></div>
+          <div class="flex justify-between"><strong>สถานะ:</strong> <span>${row[10]}</span></div>
+          <div class="flex justify-between"><strong>จำนวนลา/วัน:</strong> <span>${row[11]}</span></div>
+        `,
+        width: 600,
+      });
+    }
+
+    // Function to format date (DD/MM/YYYY)
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+
+    // Function to show confirmation before updating the status
+    function confirmUpdateStatus(id, newStatus, rowIndex) {
+      Swal.fire({
+        title: `คุณต้องการ${newStatus === 'อนุมัติ' ? 'อนุมัติ' : 'ไม่อนุมัติ'} คำขอนี้ใช่หรือไม่?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ใช่, ทำต่อไป',
+        cancelButtonText: 'ยกเลิก'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          updateStatus(id, newStatus, rowIndex);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
